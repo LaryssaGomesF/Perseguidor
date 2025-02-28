@@ -61,9 +61,7 @@ void AdcContinuos::ConfigureAdc(bool (*callback)(adc_continuous_ctx_t *, const a
 	
 }
 
-void AdcContinuos::Calibration() {
-	int result[6];
-	
+void AdcContinuos::Calibration() {	
 	uint8_t buf[30];
 	uint32_t rxLen = 0;
     adc_continuous_read(_adc_handle, buf, 12, &rxLen, 0);
@@ -136,7 +134,7 @@ void AdcContinuos::GetMinAndMaxValues(){
 	 printf("max: %hu ; %hu , %hu, %hu ,%hu, %hu \n", max_values[0],max_values[1],max_values[2],max_values[3],max_values[4],max_values[5]);
 }
 
-void AdcContinuos::ReadAdc(int (*read_data)[6]) {
+void AdcContinuos::ReadAdc(float (*read_data)[6]) {
 	uint8_t buf[30];
 	uint32_t rxLen = 0;
     adc_continuous_read(_adc_handle, buf, 12, &rxLen, 0);
@@ -145,12 +143,60 @@ void AdcContinuos::ReadAdc(int (*read_data)[6]) {
 			adc_digi_output_data_t *p = (adc_digi_output_data_t *)&buf[i];
 			uint16_t channel = p->type1.channel;
 			uint16_t data = p->type1.data;
-			if (channel == ADC_CHANNEL_6) (*read_data)[0] = data;
-	        if (channel == ADC_CHANNEL_7) (*read_data)[1] = data;
-	        if (channel == ADC_CHANNEL_3) (*read_data)[2] = data;
-	        if (channel == ADC_CHANNEL_4) (*read_data)[3] = data;
-	        if (channel == ADC_CHANNEL_0) (*read_data)[4] = data;
-	        if (channel == ADC_CHANNEL_5) (*read_data)[5] = data;
+			//CANAL 6
+			if (channel == ADC_CHANNEL_6){
+				float value = 10.0*((float)(data - min_values[0]) / (float)(max_values[0] - min_values[0]));
+				if (_invert) {
+					value = 10.0 - value;
+				}
+				(*read_data)[0] = value;
+			}
+			
+			//CANAL 7 
+	        if (channel == ADC_CHANNEL_7){
+				float value = 10.0*((float)(data - min_values[1]) / (float)(max_values[1] - min_values[1]));
+				if (_invert) {
+					value = 10.0 - value;
+				}
+				(*read_data)[1] = value;			
+			}
+			
+			//CANAL 3 
+	        if (channel == ADC_CHANNEL_3){
+				float value = 10.0*((float)(data - min_values[2]) / (float)(max_values[2] - min_values[2]));
+				if (_invert) {
+					value = 10.0 - value;
+				}
+				(*read_data)[2] = value;			
+			}
+			
+			//CANAL 4
+	        if (channel == ADC_CHANNEL_4){
+				float value = 10.0*((float)(data - min_values[3]) / (float)(max_values[3] - min_values[3]));
+				if (_invert) {
+					value = 10.0 - value;
+				}
+				(*read_data)[3] = value;			
+			}
+			
+			// CANAL 0 
+	        if (channel == ADC_CHANNEL_0){
+				float value = 10.0*((float)(data - min_values[4]) / (float)(max_values[4] - min_values[4]));
+				if (_invert) {
+					value = 10.0 - value;
+				}
+				(*read_data)[4] = value;			
+			}
+			
+			// CANAL 5
+	        if (channel == ADC_CHANNEL_5){
+				float value = 10.0*((float)(data - min_values[5]) / (float)(max_values[5] - min_values[5]));
+				if (_invert) {
+					value = 10.0 - value;
+				}
+				(*read_data)[5] = value;			
+			}
 			
 		}
+		
 }

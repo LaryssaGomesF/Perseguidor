@@ -38,7 +38,7 @@ public:
 	~AdcContinuos() {}
     void ConfigureAdc(bool (*callback)(adc_continuous_ctx_t *, const adc_continuous_evt_data_t *, void *));
     void Calibration();
-    void ReadAdc(int (*read_data)[6]);
+    void ReadAdc(float (*read_data)[6]);
     void GetMinAndMaxValues();
    
 

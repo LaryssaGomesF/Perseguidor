@@ -18,7 +18,7 @@
 #include "esp_bit_defs.h"
 #include "hal/adc_types.h"
 #include "adc/adc.h"
-#include "adc/adccontinuos.h"
+#include "adccontinuos/adccontinuos.h"
 #include "encoder/encoder.h"
 
 #define DSHOT_MOTOR_R 13
@@ -68,13 +68,10 @@ Encoder encoderR(GPIO_ENCR_CHA, GPIO_ENCR_CHB, 0);
 const int start_key = 69, stop_key = 70;
 bool protocol = 0;
 
-// for SIRC protocol
-//const int start_key = 1, stop_key = 2;
-//bool protocol = 1;
 
 IRReceiver IRSensor(static_cast<gpio_num_t>(IR_RECEIVER_PIN), protocol);
 
-float adcSensors[9] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+float adcSensors[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 
 int ADC_DATA[6] = {0 , 0, 0, 0, 0,0};
 
@@ -107,7 +104,7 @@ void countCheckpoint(void *parameters){
 	
 	for (;;) {
 		
-		//Left
+		/*//Left
 		adcSensors[7] = adc.ReadAdc(7);
 		if(adcSensors[7] > 2.5 && stateL == false){
 			
@@ -132,7 +129,7 @@ void countCheckpoint(void *parameters){
 			ledWhite.UpdateGPIO(false);
 			ledYellow.UpdateGPIO(false);
 			stateR = false;
-		}
+		}*/
 		vTaskDelay(pdMS_TO_TICKS(10));
 	}
 }
@@ -141,14 +138,12 @@ void followLine(void *parameters) {
 	static float error = 0, lastError = 0, sensorSum = 0 ;
 	static int acel = 0;
 	static bool start = false;
-	mosfet.UpdateGPIO(true);
+	//mosfet.UpdateGPIO(true);
 	for(;;) {  
 		if (command == start_key) start = true;
 		
 		if (start) {
-		for(uint8_t i=0; i<6; i++) {
-			adcSensors[i] = adc.ReadAdc(i);
-		}
+		adcContinuos.ReadAdc(&adcSensors);
 		lastError = error;
 		sensorSum = adcSensors[0] + adcSensors[1] + adcSensors[2] + adcSensors[3]+ adcSensors[4] + adcSensors[5];
 		
@@ -166,13 +161,13 @@ void followLine(void *parameters) {
 		 
 		if(sensorSum < 5) {
 			
-	    	if(lastError > 0){
+	    	/*if(lastError > 0){
 				motorR.UpdateThrottle(MOTOR_BASE_SPEED);
 	   		    motorL.UpdateThrottle(20);
 			}else{
 				motorL.UpdateThrottle(MOTOR_BASE_SPEED);
 	   			motorR.UpdateThrottle(20);
-			}
+			}*/
 			
 		} else {
 			error = (adcSensors[1] - adcSensors[0]) + 2*(adcSensors[3] - adcSensors[2]) + 3*(adcSensors[5] - adcSensors[4]);
@@ -186,7 +181,7 @@ void followLine(void *parameters) {
 		motorR.UpdateThrottle(0);	
 	    motorL.UpdateThrottle(0);
 	  }
-	    vTaskDelay(pdMS_TO_TICKS(2));
+	    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 	}
 }
 
@@ -197,41 +192,28 @@ void irmonitor(void *parameters) {
 	}
 }
 
-void calibration(void *parameters) {
-	for(;;) {
-		mosfet.UpdateGPIO(true);
-		ledWhite.UpdateGPIO(true);
-		int speed = MOTOR_BASE_SPEED + 15;
-		for(int i = 0; i < 1000; i++) {
-			for(int j = 0; j < 9; j++) {
-				motorR.UpdateThrottle(speed);
-			   	motorL.UpdateThrottle(-speed);
-			   	adc.Calibration(j);
-		   	}
-		}
-		motorR.UpdateThrottle(0);
-		motorL.UpdateThrottle(0);
-		ledWhite.UpdateGPIO(false);
-		
-		xTaskCreatePinnedToCore(followLine, "FollowLine", 4096, NULL, 2, &xHandleFollowLine, 0);
-		//xTaskCreatePinnedToCore(countCheckpoint, "CountCheckpoints", 4096, NULL, 2, &xHandleCountCheckpoint, 1);
-		xTaskCreatePinnedToCore(irmonitor, "IRMonitor", 4096, NULL, 2, &xHandleIRMonitor, 1);
-		//xTaskCreatePinnedToCore(readEncoder, "ReadEncoder", 4096, NULL, 2, &xHandleReadEncoder, 1);
 
-		//vTaskSuspend(xHandleCalibration);
-		vTaskDelete(NULL);
-	}
-}
 
 static bool IRAM_ATTR callback(adc_continuous_ctx_t *handle, const adc_continuous_evt_data_t *edata, void *user_data) {
-    BaseType_t mustYield = pdFALSE;
-    //vTaskNotifyGiveFromISR(cb_task, &mustYield);
-    vTaskNotifyGiveFromISR(xHandleCalibration, &mustYield);
-    return (mustYield == pdTRUE);  
+    BaseType_t mustYield1 = pdFALSE;
+    BaseType_t mustYield2 = pdFALSE;
+
+    if ((xHandleFollowLine != NULL) && (eTaskGetState(xHandleFollowLine) != eSuspended)) {
+        vTaskNotifyGiveFromISR(xHandleFollowLine, &mustYield1);
+    }
+
+    if ((xHandleCalibration != NULL) && (eTaskGetState(xHandleCalibration) != eSuspended)) {
+        vTaskNotifyGiveFromISR(xHandleCalibration, &mustYield2);
+    }
+
+    return (mustYield1 || mustYield2);  // Retorna true se alguma task precisar de troca de contexto
 }
+
+
+
 int countCalibration = 0;
 
-void calibration2(void *parameters) {
+void calibration(void *parameters) {
 	for(;;) {
 		
 		mosfet.UpdateGPIO(true);
@@ -241,37 +223,27 @@ void calibration2(void *parameters) {
 	   	motorL.UpdateThrottle(-speed);
 	   	adcContinuos.Calibration();	
 		countCalibration++;
-		if(countCalibration > 2000){
+		if(countCalibration > 20000){
 			
 			printf("stop calibracao\n\n\n");
 			motorR.UpdateThrottle(0);
 			motorL.UpdateThrottle(0);
 			ledWhite.UpdateGPIO(false);		
 			adcContinuos.GetMinAndMaxValues();
+			
+			
+			xTaskCreatePinnedToCore(followLine, "FollowLine", 4096, NULL, 2, &xHandleFollowLine, 0);
+			//xTaskCreatePinnedToCore(countCheckpoint, "CountCheckpoints", 4096, NULL, 2, &xHandleCountCheckpoint, 1);
+			xTaskCreatePinnedToCore(irmonitor, "IRMonitor", 4096, NULL, 2, &xHandleIRMonitor, 1);
+			//xTaskCreatePinnedToCore(readEncoder, "ReadEncoder", 4096, NULL, 2, &xHandleReadEncoder, 1);
+			
 			vTaskSuspend(xHandleCalibration);
 			vTaskDelete(NULL);
-			
-			//xTaskCreatePinnedToCore(followLine, "FollowLine", 4096, NULL, 2, &xHandleFollowLine, 0);
-			//xTaskCreatePinnedToCore(countCheckpoint, "CountCheckpoints", 4096, NULL, 2, &xHandleCountCheckpoint, 1);
-			//xTaskCreatePinnedToCore(irmonitor, "IRMonitor", 4096, NULL, 2, &xHandleIRMonitor, 1);
-			//xTaskCreatePinnedToCore(readEncoder, "ReadEncoder", 4096, NULL, 2, &xHandleReadEncoder, 1);
 		}
 		ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 	}
 }
 
-
-void cbTask (void *parameters)
-{
-	
-	for (;;)
-	{
-		ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-		adcContinuos.ReadAdc(&ADC_DATA);		
-		printf("s1: %d ; s2: %d ;  s3: %d ;  s4: %d ; s5: %d ; s6: %d ; ", ADC_DATA[4], ADC_DATA[2], ADC_DATA[0], ADC_DATA[1],ADC_DATA[3],ADC_DATA[5]);
-		printf("\n");
-	}
-}
 
 
 extern "C" void app_main(void)
@@ -292,10 +264,7 @@ extern "C" void app_main(void)
 	mosfet.UpdateGPIO(true);
 	
 	adcContinuos.ConfigureAdc(callback);
-	xTaskCreatePinnedToCore(calibration2, "Calibration", 4096, NULL, 24, &xHandleCalibration, 0);
+	xTaskCreatePinnedToCore(calibration, "Calibration", 4096, NULL, 24, &xHandleCalibration, 0);
+	xTaskCreatePinnedToCore(irmonitor, "IRMonitor", 4096, NULL, 1, &xHandleIRMonitor, 1);
 
-	//xTaskCreate(cbTask, "Callback Task", 4096, NULL, 0, &cb_task);
-	
-	
-	//xTaskCreatePinnedToCore(readAdcContinuos, "AdcContinuos", 4096, NULL, 24, &xHandleAdcContinuos, 0);
 }
