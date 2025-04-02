@@ -119,14 +119,6 @@ void AdcContinuos::Calibration() {
 			}		
 	}
 	
-	/*for (int i=0; i<6; i++){
-		if(result[i] > max_values[i]) {
-			max_values[i] = result[i];
-		}	
-		if(result[i] < min_values[i]) {
-			min_values[i] = result[i];
-		}
-	}*/
 }
 
 void AdcContinuos::GetMinAndMaxValues(){
