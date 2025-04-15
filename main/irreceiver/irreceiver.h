@@ -18,6 +18,7 @@ extern "C" {
 #endif
 
 #ifdef __cplusplus
+
 class IRReceiver {
 private:
     gpio_num_t _gpio_pin;

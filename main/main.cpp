@@ -21,6 +21,9 @@
 #include "adc/adc.h"
 #include "adccontinuos/adccontinuos.h"
 #include "encoder/encoder.h"
+#include "mpu/mpu.h"
+#include "wifi/wifi.h"
+#include "websocket/websocket.h"
 
 #define DSHOT_MOTOR_R 13
 
@@ -35,6 +38,13 @@
 #define GPIO_ENCL_CHA 16
 #define GPIO_ENCL_CHB 4
 #define IR_RECEIVER_PIN 15
+#define GPIO_MPU_SDA 22
+#define GPIO_MPU_SCL 21
+#define I2C_PORT I2C_NUM_0
+
+#define WIFI_SSID "RAYANE"
+#define WIFI_PASS "35523839"
+#define WEBSOCKET_URI "ws://192.168.1.25:8765/"
 
 // 0 - White line on a black surface
 // 1 - Black line on a white surface
@@ -50,6 +60,8 @@ TaskHandle_t xHandleReadSensor = NULL;
 TaskHandle_t xHandleCountCheckpoint = NULL;
 TaskHandle_t xHandleReadEncoder = NULL;
 TaskHandle_t xHandleIRMonitor = NULL;
+TaskHandle_t xHandleReadMpu = NULL;
+TaskHandle_t xHandleSendData = NULL;
 TaskHandle_t cb_task = NULL;
 			 
 // Classes presenting the project components
@@ -64,6 +76,10 @@ Adc adc(adc1, adc2, TRACE_COLOR);
 AdcContinuos adcContinuos(adc1,  TRACE_COLOR );
 Encoder encoderL(GPIO_ENCL_CHA, GPIO_ENCL_CHB, 0);
 Encoder encoderR(GPIO_ENCR_CHA, GPIO_ENCR_CHB, 0);
+Mpu mpu(static_cast<gpio_num_t>(GPIO_MPU_SDA),static_cast<gpio_num_t>(GPIO_MPU_SCL) , static_cast<i2c_port_num_t>(I2C_PORT));
+Wifi wifi;
+Websocket websocket;
+
 
 
 // for NEC protocol
@@ -84,6 +100,24 @@ uint8_t command;
 
 
 static int countR = 0, countL= 0;
+
+void sendData(void *parameters){
+	printf("sendDataWebsocker");
+	for(;;){
+		websocket.SendData();
+		vTaskDelay(pdMS_TO_TICKS(10000));
+	}
+}
+
+
+void readMpu(void *parameters){
+	printf("readMPU");
+	for(;;){
+		mpu.ReadMPU();
+		vTaskDelay(pdMS_TO_TICKS(10000));
+	}
+}
+
 
 void readEncoder(void *parameters){
 	printf("readEncoder");
@@ -135,6 +169,7 @@ void countCheckpoint(void *parameters){
 		vTaskDelay(pdMS_TO_TICKS(10));
 	}
 }
+
 void readLine(void *parameters){
 	for(;;){
 		adcContinuos.ReadAdc(&adcSensors);
@@ -230,7 +265,9 @@ void calibration(void *parameters) {
 			xTaskCreatePinnedToCore(readLine, "ReadLine", 4096, NULL, 2, &xHandleReadLine, 0);
 			
 			//xTaskCreatePinnedToCore(countCheckpoint, "CountCheckpoints", 4096, NULL, 2, &xHandleCountCheckpoint, 1);
+			xTaskCreatePinnedToCore(sendData, "SendData", 4096, NULL, 2, &xHandleSendData, 1);
 			xTaskCreatePinnedToCore(irmonitor, "IRMonitor", 4096, NULL, 2, &xHandleIRMonitor, 1);
+			xTaskCreatePinnedToCore(readMpu, "ReadMPU", 4096, NULL, 2, &xHandleReadMpu, 1);
 			//xTaskCreatePinnedToCore(readEncoder, "ReadEncoder", 4096, NULL, 2, &xHandleReadEncoder, 1);
 			
 			vTaskSuspend(xHandleCalibration);
@@ -254,13 +291,25 @@ extern "C" void app_main(void)
 	mosfet.ConfigureGPIO();
 	//adc.ConfigureAdc();
 	
+	//WIFI
+	ESP_ERROR_CHECK(nvs_flash_init());
+	wifi.ConfigureWifi();
+	wifi.ConnectWifi(WIFI_SSID, WIFI_PASS);
+	vTaskDelay(pdMS_TO_TICKS(5000));
+	
+	websocket.ConfigureWebsocket(WEBSOCKET_URI);
+
+	
 	encoderL.ConfigureEncoder();
 	encoderR.ConfigureEncoder();	
 	IRSensor.ConfigureIRReceiver();
 	mosfet.UpdateGPIO(true);
 	
 	adcContinuos.ConfigureAdc(callback);
+	mpu.ConfigureMPU();
+	
+	
 	xTaskCreatePinnedToCore(calibration, "Calibration", 4096, NULL, 24, &xHandleCalibration, 0);
-	xTaskCreatePinnedToCore(irmonitor, "IRMonitor", 4096, NULL, 1, &xHandleIRMonitor, 1);
+	
 
 }

@@ -74,10 +74,10 @@ uint8_t IRReceiver::parse_signal_frame(rmt_symbol_word_t *rmt_symbols, size_t sy
 	uint8_t signal = 0;
 	uint32_t symbol_sum;
 	if (_protocol == NEC) {
-		printf("NEC frame start---\r\n");
+		//printf("NEC frame start---\r\n");
 	    for (size_t i = 0; i < symbol_num; i++) {
-	        printf("%d - {%d:%d},{%d:%d}\r\n", i, rmt_symbols[i].level0, rmt_symbols[i].duration0,
-	               rmt_symbols[i].level1, rmt_symbols[i].duration1);
+	      /* printf("%d - {%d:%d},{%d:%d}\r\n", i, rmt_symbols[i].level0, rmt_symbols[i].duration0,
+	               rmt_symbols[i].level1, rmt_symbols[i].duration1);*/ 
            	
 	    }
 	    for (uint8_t i = _command_init; i < _command_finish; i++) {
@@ -88,8 +88,8 @@ uint8_t IRReceiver::parse_signal_frame(rmt_symbol_word_t *rmt_symbols, size_t sy
 				signal = (signal >> 1) | 128;
 			}
 		}
-	    printf("\nSignal result %u\n", signal);
-    	printf("---NEC frame end: ");
+	    //printf("\nSignal result %u\n", signal);
+    	//printf("---NEC frame end: ");
     	return signal;
 	}
 	if (_protocol == SIRC) {
