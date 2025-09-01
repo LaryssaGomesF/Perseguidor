@@ -4,10 +4,8 @@
 
 #define ADC_ATTEN 		ADC_ATTEN_DB_12
 
-Adc::Adc(adc_channel_t adc1_channels[], adc_channel_t adc2_channels[], bool invert) {
-	for(int i=0; i < sizeof(_adc1_channels) / sizeof(adc_channel_t); i++) {
-		_adc1_channels[i] = adc1_channels[i];
-	}
+Adc::Adc(adc_channel_t adc2_channels[], bool invert) {
+
 	for(int i=0; i < sizeof(_adc2_channels) / sizeof(adc_channel_t); i++) {
 		_adc2_channels[i] = adc2_channels[i];
 	}
@@ -55,31 +53,25 @@ static bool adc_calibration_init(adc_unit_t unit, adc_channel_t channel, adc_att
 
 
 void Adc::ConfigureAdc() {
-	adc_oneshot_unit_init_cfg_t init_config1 = {
-        .unit_id = ADC_UNIT_1,
-    };
+	
     adc_oneshot_unit_init_cfg_t init_config2 = {
         .unit_id = ADC_UNIT_2,
     };
-    ESP_ERROR_CHECK(adc_oneshot_new_unit(&init_config1, &_adc1_handle));
+   
     ESP_ERROR_CHECK(adc_oneshot_new_unit(&init_config2, &_adc2_handle));
     
     adc_oneshot_chan_cfg_t config = {
 		.atten = ADC_ATTEN,
         .bitwidth = ADC_BITWIDTH_DEFAULT,
     };    
-    for(int i=0; i < sizeof(_adc1_channels) / sizeof(adc_channel_t); i++) {
-		ESP_ERROR_CHECK(adc_oneshot_config_channel(_adc1_handle, _adc1_channels[i], &config));
-		adc_cali_handle_t adc1_cali_handle = NULL;
-		bool do_calibration1_chan0 = adc_calibration_init(ADC_UNIT_1, _adc1_channels[i], ADC_ATTEN, &adc1_cali_handle);
-	}
+
      for(int i=0; i < sizeof(_adc2_channels) / sizeof(adc_channel_t); i++) {
 		ESP_ERROR_CHECK(adc_oneshot_config_channel(_adc2_handle, _adc2_channels[i], &config));
 		adc_cali_handle_t adc2_cali_handle = NULL;
 		bool do_calibration1_chan0 = adc_calibration_init(ADC_UNIT_2, _adc2_channels[i], ADC_ATTEN, &adc2_cali_handle);
 	}
 	
-	for(uint8_t i = 0; i < 9; i++) {
+	for(uint8_t i = 0; i < 3; i++) {
 		max_values[i] = 0;
 		min_values[i] = 9999;
 	}
@@ -87,11 +79,9 @@ void Adc::ConfigureAdc() {
 
 void Adc::Calibration(uint8_t i) {
 	int result;
-	if (i >= 0 && i < 6) {
-		ESP_ERROR_CHECK(adc_oneshot_read(_adc1_handle, _adc1_channels[i], &result));
-	} else {
-		ESP_ERROR_CHECK(adc_oneshot_read(_adc2_handle, _adc2_channels[i-6], &result));
-	}
+
+	ESP_ERROR_CHECK(adc_oneshot_read(_adc2_handle, _adc2_channels[i], &result));
+	
 	if(result > max_values[i]) {
 		max_values[i] = result;
 	}
@@ -100,13 +90,23 @@ void Adc::Calibration(uint8_t i) {
 	}
 }
 
+void Adc::GetMinAndMaxValues(){
+	 printf("Side min: %hu ; %hu , %hu \n", min_values[0], min_values[1], min_values[2]);
+	 printf("Side max: %hu ; %hu , %hu \n", max_values[0], max_values[1], max_values[2]);
+}
+
+int Adc::ReadRaw(uint8_t i ){
+	int result;
+
+	ESP_ERROR_CHECK(adc_oneshot_read(_adc2_handle, _adc2_channels[i], &result));
+	return result;
+}
+
 float Adc::ReadAdc(uint8_t i) {
 	int result;
-	if (i >= 0 && i < 6) {
-		ESP_ERROR_CHECK(adc_oneshot_read(_adc1_handle, _adc1_channels[i], &result));
-	} else {
-		ESP_ERROR_CHECK(adc_oneshot_read(_adc2_handle, _adc2_channels[i-6], &result));
-	}
+
+	ESP_ERROR_CHECK(adc_oneshot_read(_adc2_handle, _adc2_channels[i], &result));
+	
 	float value = 10.0*((float)(result - min_values[i]) / (float)(max_values[i] - min_values[i]));
 	if (_invert) {
 		value = 10.0 - value;

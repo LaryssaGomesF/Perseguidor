@@ -47,7 +47,7 @@ public:
     Mpu(gpio_num_t sda, gpio_num_t scl, i2c_port_num_t i2c_port);
 	~Mpu() {}
 	void ConfigureMPU();
-	void ReadMPU();
+	void ReadMPU(int* gyroX, int* gyroY, int* gyroZ, int* accelX, int* accelY, int* accelZ);
 };
 #endif
 #endif 

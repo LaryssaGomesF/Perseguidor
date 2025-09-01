@@ -71,8 +71,8 @@ Gpio ledYellow(static_cast<gpio_num_t>(GPIO_LED2));
 Dshot motorL(static_cast<gpio_num_t>(DSHOT_MOTOR_L), false, MOTOR_MAX_SPEED);
 Dshot motorR(static_cast<gpio_num_t>(DSHOT_MOTOR_R), true, MOTOR_MAX_SPEED);
 adc_channel_t adc1[6] = {ADC_CHANNEL_6, ADC_CHANNEL_7, ADC_CHANNEL_3, ADC_CHANNEL_4, ADC_CHANNEL_0, ADC_CHANNEL_5};
-adc_channel_t adc2[3] = {ADC_CHANNEL_7, ADC_CHANNEL_8, ADC_CHANNEL_9};
-Adc adc(adc1, adc2, TRACE_COLOR);
+adc_channel_t adc2[3] = {ADC_CHANNEL_1, ADC_CHANNEL_2, ADC_CHANNEL_9};
+Adc adc( adc2, TRACE_COLOR);
 AdcContinuos adcContinuos(adc1,  TRACE_COLOR );
 Encoder encoderL(GPIO_ENCL_CHA, GPIO_ENCL_CHB, 0);
 Encoder encoderR(GPIO_ENCR_CHA, GPIO_ENCR_CHB, 0);
@@ -80,6 +80,8 @@ Mpu mpu(static_cast<gpio_num_t>(GPIO_MPU_SDA),static_cast<gpio_num_t>(GPIO_MPU_S
 Wifi wifi;
 Websocket websocket;
 
+Gpio encoderA(static_cast<gpio_num_t>(18));
+Gpio encoderB(static_cast<gpio_num_t>(19));
 
 
 // for NEC protocol
@@ -90,8 +92,9 @@ bool protocol = 0;
 IRReceiver IRSensor(static_cast<gpio_num_t>(IR_RECEIVER_PIN), protocol);
 
 float adcSensors[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+float adcSideSensors[2] = {0.0, 0.0};
 
-int ADC_DATA[6] = {0 , 0, 0, 0, 0,0};
+
 
 const float kp = 1.10, kd = 0.0, max_accel = 1;
 
@@ -104,7 +107,7 @@ static int countR = 0, countL= 0;
 void sendData(void *parameters){
 	printf("sendDataWebsocker");
 	for(;;){
-		websocket.SendData();
+		//websocket.SendData();
 		vTaskDelay(pdMS_TO_TICKS(10000));
 	}
 }
@@ -113,8 +116,10 @@ void sendData(void *parameters){
 void readMpu(void *parameters){
 	printf("readMPU");
 	for(;;){
-		mpu.ReadMPU();
-		vTaskDelay(pdMS_TO_TICKS(10000));
+		int gyroX, gyroY, gyroZ, accelX, accelY, accelZ = 0;
+		mpu.ReadMPU(&gyroX, &gyroY, &gyroZ, &accelX, &accelY, &accelZ);		
+		websocket.SendData(gyroX, gyroY, gyroZ, accelX, accelY, accelZ);
+		vTaskDelay(pdMS_TO_TICKS(1));
 	}
 }
 
@@ -123,12 +128,16 @@ void readEncoder(void *parameters){
 	printf("readEncoder");
 	int leftEncoder = 0, rightEncoder = 0;
 	for(;;){
-		
-		encoderL.ReadEncoder(&leftEncoder);
-		encoderR.ReadEncoder(&rightEncoder);
-		printf("%d - %d", leftEncoder, rightEncoder);
+		leftEncoder = adc.ReadRaw(0);
+		rightEncoder = adc.ReadRaw(1);
+		float voltageLeft = (leftEncoder / 4095.0) * 3.3;
+		float voltageRight = (rightEncoder / 4095.0) * 3.3;
+
+		//encoderL.ReadEncoder(&leftEncoder);
+		//encoderR.ReadEncoder(&rightEncoder);
+		printf("Encoder %f - %f", voltageLeft, voltageRight);
 		printf("\n");
-		vTaskDelay(pdMS_TO_TICKS(10));
+		vTaskDelay(pdMS_TO_TICKS(1000));
 	}
 }
 
@@ -140,32 +149,31 @@ void countCheckpoint(void *parameters){
 	
 	for (;;) {
 		
-		/*//Left
-		adcSensors[7] = adc.ReadAdc(7);
-		if(adcSensors[7] > 2.5 && stateL == false){
+		//Left 7
+		adcSideSensors[0] = adc.ReadAdc(0);
+		if(adcSideSensors[0] > 2.5 && stateL == false){
 			
-		
 			stateL = true;
 			countL++;
 		} 
-		if(adcSensors[7] < 2.5 && stateL == true){
+		if(adcSideSensors[0] < 2.5 && stateL == true){
 			stateL = false;
 			
 		}
 		
-		//Right
-		adcSensors[8] = adc.ReadAdc(8);
-		if(adcSensors[8] > 2.5 && stateR == false){
+		//Right 8
+		adcSideSensors[1] = adc.ReadAdc(1);
+		if(adcSideSensors[1] > 2.5 && stateR == false){
 			ledWhite.UpdateGPIO(true);
 			ledYellow.UpdateGPIO(true);
 			stateR = true;
 			countR++;
 		} 
-		if(adcSensors[8] < 2.5 && stateR == true){
+		if(adcSideSensors[1] < 2.5 && stateR == true){
 			ledWhite.UpdateGPIO(false);
 			ledYellow.UpdateGPIO(false);
 			stateR = false;
-		}*/
+		}
 		vTaskDelay(pdMS_TO_TICKS(10));
 	}
 }
@@ -252,6 +260,9 @@ void calibration(void *parameters) {
 	   	motorL.UpdateThrottle(-speed);
 	   	adcContinuos.Calibration();	
 		countCalibration++;
+		//adc.Calibration(0);
+		//adc.Calibration(1);
+		//adc.Calibration(2);
 		if(countCalibration > 20000){
 			
 			printf("stop calibracao\n\n\n");
@@ -259,15 +270,17 @@ void calibration(void *parameters) {
 			motorL.UpdateThrottle(0);
 			ledWhite.UpdateGPIO(false);		
 			adcContinuos.GetMinAndMaxValues();
+			//adc.GetMinAndMaxValues();
 			
 			
 			xTaskCreatePinnedToCore(followLine, "FollowLine", 4096, NULL, 2, &xHandleFollowLine, 0);
 			xTaskCreatePinnedToCore(readLine, "ReadLine", 4096, NULL, 2, &xHandleReadLine, 0);
 			
-			//xTaskCreatePinnedToCore(countCheckpoint, "CountCheckpoints", 4096, NULL, 2, &xHandleCountCheckpoint, 1);
-			xTaskCreatePinnedToCore(sendData, "SendData", 4096, NULL, 2, &xHandleSendData, 1);
+		
+			//xTaskCreatePinnedToCore(sendData, "SendData", 4096, NULL, 2, &xHandleSendData, 1);
 			xTaskCreatePinnedToCore(irmonitor, "IRMonitor", 4096, NULL, 2, &xHandleIRMonitor, 1);
 			xTaskCreatePinnedToCore(readMpu, "ReadMPU", 4096, NULL, 2, &xHandleReadMpu, 1);
+			//xTaskCreatePinnedToCore(countCheckpoint, "CountCheckpoints", 4096, NULL, 2, &xHandleCountCheckpoint, 1);
 			//xTaskCreatePinnedToCore(readEncoder, "ReadEncoder", 4096, NULL, 2, &xHandleReadEncoder, 1);
 			
 			vTaskSuspend(xHandleCalibration);
@@ -300,16 +313,17 @@ extern "C" void app_main(void)
 	websocket.ConfigureWebsocket(WEBSOCKET_URI);
 
 	
-	encoderL.ConfigureEncoder();
+	/*encoderL.ConfigureEncoder();
 	encoderR.ConfigureEncoder();	
-	IRSensor.ConfigureIRReceiver();
+	IRSensor.ConfigureIRReceiver();*/
 	mosfet.UpdateGPIO(true);
 	
 	adcContinuos.ConfigureAdc(callback);
 	mpu.ConfigureMPU();
+	xTaskCreatePinnedToCore(readMpu, "ReadMPU", 4096, NULL, 2, &xHandleReadMpu, 1);
 	
-	
-	xTaskCreatePinnedToCore(calibration, "Calibration", 4096, NULL, 24, &xHandleCalibration, 0);
-	
+	//xTaskCreatePinnedToCore(calibration, "Calibration", 4096, NULL, 24, &xHandleCalibration, 0);
+	//xTaskCreatePinnedToCore(readEncoder, "ReadEncoder", 4096, NULL, 2, &xHandleReadEncoder, 1);
+
 
 }

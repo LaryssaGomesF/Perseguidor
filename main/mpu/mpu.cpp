@@ -35,9 +35,17 @@ void Mpu::ConfigureMPU() {
     _activate_mpu[1] = 0x00;
     
     i2c_master_transmit(_dev_handle, _activate_mpu, 2, 50);
+    
+    // 2. Configurar faixa do acelerômetro para ±2g (ACCEL_CONFIG = 0x1C)
+	uint8_t accel_config[2] = {0x1C, 0x00};
+	i2c_master_transmit(_dev_handle, accel_config, 2, 50);
+
+	// 3. Configurar faixa do giroscópio para ±250°/s (GYRO_CONFIG = 0x1B)
+	uint8_t gyro_config[2] = {0x1B, 0x00};
+	i2c_master_transmit(_dev_handle, gyro_config, 2, 50);
 }
 
-void Mpu::ReadMPU() {
+void Mpu::ReadMPU(int* gyroX, int* gyroY, int* gyroZ, int* accelX, int* accelY, int* accelZ) {
  	
 	 for(uint8_t i=0; i<6; i+=2) {
 			i2c_master_transmit_receive(_dev_handle, &_gyro_data_address[i], 1, &_gyro_data_read[i], 1, 50);
@@ -49,6 +57,12 @@ void Mpu::ReadMPU() {
 			_gyro_combined_values[i/2] = (int16_t)((_gyro_data_read[i] << 8) | _gyro_data_read[i+1]);
 			_acel_combined_values[i/2] = (int16_t)((_acel_data_read[i] << 8) | _acel_data_read[i+1]);
 	}
+	*gyroX = _gyro_combined_values[0] ;
+	*gyroY = _gyro_combined_values[1] ;
+	*gyroZ = _gyro_combined_values[2] ;
+	*accelX = _acel_combined_values[0] ;
+	*accelY = _acel_combined_values[1] ;
+	*accelZ = _acel_combined_values[2] ;
 		
 	printf("\nGyro - X: %05d  /  Y: %05d  /  Z: %05d  \nAcel - X: %05d  /  Y: %05d  /  Z: %05d  ", _gyro_combined_values[0], _gyro_combined_values[1], _gyro_combined_values[2], _acel_combined_values[0], _acel_combined_values[1], _acel_combined_values[2]);
 }

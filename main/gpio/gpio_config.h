@@ -29,6 +29,8 @@ public:
 	~Gpio() {}
 	void ConfigureGPIO();
 	void UpdateGPIO(bool);
+	int ReadGPIO();
+	void ConfigureAsInput(bool pullup);
 };
 #endif
 #endif 

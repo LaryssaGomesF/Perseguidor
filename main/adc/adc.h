@@ -25,17 +25,19 @@ extern "C" {
 #ifdef __cplusplus
 class Adc {
 private:
-    adc_oneshot_unit_handle_t _adc1_handle, _adc2_handle;
-    adc_channel_t _adc1_channels[6], _adc2_channels[3];
-    uint16_t max_values[9], min_values[9];
+    adc_oneshot_unit_handle_t  _adc2_handle;
+    adc_channel_t  _adc2_channels[3];
+    uint16_t max_values[3], min_values[3];
     bool _invert = false;
     
 public:
-	Adc(adc_channel_t adc1_channels[], adc_channel_t adc2_channels[], bool invert);
+	Adc(adc_channel_t adc2_channels[], bool invert);
 	~Adc() {}
     void ConfigureAdc();
     void Calibration(uint8_t);
     float ReadAdc(uint8_t);
+    int ReadRaw(uint8_t);
+    void GetMinAndMaxValues();
 };
 #endif
 #endif // ADC_H

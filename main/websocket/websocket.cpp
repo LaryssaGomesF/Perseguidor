@@ -1,5 +1,6 @@
 #include "websocket.h"
 
+#include "esp_timer.h"
 
 
 Websocket::Websocket() {}
@@ -33,13 +34,11 @@ void Websocket::ConfigureWebsocket(char *uri) {
  
 }
 
-void Websocket::SendData(){
+void Websocket::SendData(int gyroX, int gyroY, int gyroZ, int accelX, int accelY, int accelZ){
 	 if (esp_websocket_client_is_connected(client)) {
-            char msg[64];
-            float gyro_x = 1.23; // Simulado
-            int encoder_ticks = 456; // Simulado
-
-            snprintf(msg, sizeof(msg), "{\"gyro\": %.2f, \"encoder\": %d}", gyro_x, encoder_ticks);
+            char msg[180];        
+			int64_t timestamp_ms = esp_timer_get_time() / 1000; 
+            snprintf(msg, sizeof(msg), "{\"gyroX\": %d, \"gyroY\": %d, \"gyroZ\": %d, \"accelX\": %d, \"accelY\": %d, \"accelZ\": %d, \"timestamp\": %lld}", gyroX, gyroY, gyroZ, accelX, accelY, accelZ, timestamp_ms);
             esp_websocket_client_send_text(client, msg, strlen(msg), portMAX_DELAY);
             ESP_LOGI("Websocket", "Enviado: %s", msg);
         }

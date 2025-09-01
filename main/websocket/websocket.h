@@ -25,7 +25,7 @@ public:
  	Websocket();
 
 	void ConfigureWebsocket(char *uri);
-	void SendData();
+	void SendData(int gyroX, int gyroY, int gyroZ, int accelX, int accelY, int accelZ);
 
 };
 #endif

@@ -122,8 +122,8 @@ void AdcContinuos::Calibration() {
 }
 
 void AdcContinuos::GetMinAndMaxValues(){
-	 printf("min: %hu ; %hu , %hu, %hu ,%hu, %hu \n", min_values[0],min_values[1],min_values[2],min_values[3],min_values[4],min_values[5]);
-	 printf("max: %hu ; %hu , %hu, %hu ,%hu, %hu \n", max_values[0],max_values[1],max_values[2],max_values[3],max_values[4],max_values[5]);
+	 printf("Head min: %hu ; %hu , %hu, %hu ,%hu, %hu \n", min_values[0],min_values[1],min_values[2],min_values[3],min_values[4],min_values[5]);
+	 printf("Head max: %hu ; %hu , %hu, %hu ,%hu, %hu \n", max_values[0],max_values[1],max_values[2],max_values[3],max_values[4],max_values[5]);
 }
 
 void AdcContinuos::ReadAdc(float (*read_data)[6]) {
