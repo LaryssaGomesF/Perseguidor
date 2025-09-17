@@ -24,6 +24,7 @@
 #include "mpu/mpu.h"
 #include "wifi/wifi.h"
 #include "websocket/websocket.h"
+#include "as5600/as5600.h"
 
 #define DSHOT_MOTOR_R 13
 
@@ -33,14 +34,17 @@
 #define GPIO_MOSFET 23
 #define GPIO_LED1 17
 #define GPIO_LED2 5
-#define GPIO_ENCR_CHA 18
+/*#define GPIO_ENCR_CHA 18
 #define GPIO_ENCR_CHB 19
 #define GPIO_ENCL_CHA 16
-#define GPIO_ENCL_CHB 4
+#define GPIO_ENCL_CHB 4*/
 #define IR_RECEIVER_PIN 15
 #define GPIO_MPU_SDA 22
 #define GPIO_MPU_SCL 21
 #define I2C_PORT I2C_NUM_0
+#define AS5600_SDA_PIN  15
+#define AS5600_SCL_PIN  2
+#define AS5600_I2C_PORT I2C_NUM_1 
 
 #define WIFI_SSID "RAYANE"
 #define WIFI_PASS "35523839"
@@ -60,8 +64,9 @@ TaskHandle_t xHandleReadSensor = NULL;
 TaskHandle_t xHandleCountCheckpoint = NULL;
 TaskHandle_t xHandleReadEncoder = NULL;
 TaskHandle_t xHandleIRMonitor = NULL;
-TaskHandle_t xHandleReadMpu = NULL;
-TaskHandle_t xHandleSendData = NULL;
+TaskHandle_t xHandleReadMpuEncoder = NULL;
+
+
 TaskHandle_t cb_task = NULL;
 			 
 // Classes presenting the project components
@@ -74,8 +79,10 @@ adc_channel_t adc1[6] = {ADC_CHANNEL_6, ADC_CHANNEL_7, ADC_CHANNEL_3, ADC_CHANNE
 adc_channel_t adc2[3] = {ADC_CHANNEL_1, ADC_CHANNEL_2, ADC_CHANNEL_9};
 Adc adc( adc2, TRACE_COLOR);
 AdcContinuos adcContinuos(adc1,  TRACE_COLOR );
-Encoder encoderL(GPIO_ENCL_CHA, GPIO_ENCL_CHB, 0);
-Encoder encoderR(GPIO_ENCR_CHA, GPIO_ENCR_CHB, 0);
+
+
+As5600 encoderL(static_cast<gpio_num_t>(AS5600_SDA_PIN), static_cast<gpio_num_t>(AS5600_SCL_PIN),static_cast<i2c_port_num_t>(AS5600_I2C_PORT));
+As5600 encoderR(static_cast<gpio_num_t>(13), static_cast<gpio_num_t>(12),static_cast<i2c_port_num_t>(AS5600_I2C_PORT));
 Mpu mpu(static_cast<gpio_num_t>(GPIO_MPU_SDA),static_cast<gpio_num_t>(GPIO_MPU_SCL) , static_cast<i2c_port_num_t>(I2C_PORT));
 Wifi wifi;
 Websocket websocket;
@@ -95,53 +102,25 @@ float adcSensors[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 float adcSideSensors[2] = {0.0, 0.0};
 
 
-
 const float kp = 1.10, kd = 0.0, max_accel = 1;
 
 uint8_t command;
-
-
-
 static int countR = 0, countL= 0;
 
-void sendData(void *parameters){
-	printf("sendDataWebsocker");
-	for(;;){
-		//websocket.SendData();
-		vTaskDelay(pdMS_TO_TICKS(10000));
-	}
-}
 
 
-void readMpu(void *parameters){
+void readMpuEncoder(void *parameters){
 	printf("readMPU");
 	for(;;){
 		int gyroX, gyroY, gyroZ, accelX, accelY, accelZ = 0;
-		mpu.ReadMPU(&gyroX, &gyroY, &gyroZ, &accelX, &accelY, &accelZ);		
-		websocket.SendData(gyroX, gyroY, gyroZ, accelX, accelY, accelZ);
+		mpu.ReadMPU(&gyroX, &gyroY, &gyroZ, &accelX, &accelY, &accelZ);
+		int16_t angleL = encoderL.ReadRawAngle();		
+		websocket.SendData(gyroX, gyroY, gyroZ, accelX, accelY, accelZ, angleL, angleL);
 		vTaskDelay(pdMS_TO_TICKS(1));
 	}
 }
 
 
-void readEncoder(void *parameters){
-	printf("readEncoder");
-	int leftEncoder = 0, rightEncoder = 0;
-	for(;;){
-		leftEncoder = adc.ReadRaw(0);
-		rightEncoder = adc.ReadRaw(1);
-		float voltageLeft = (leftEncoder / 4095.0) * 3.3;
-		float voltageRight = (rightEncoder / 4095.0) * 3.3;
-
-		//encoderL.ReadEncoder(&leftEncoder);
-		//encoderR.ReadEncoder(&rightEncoder);
-		printf("Encoder %f - %f", voltageLeft, voltageRight);
-		printf("\n");
-		vTaskDelay(pdMS_TO_TICKS(1000));
-	}
-}
-
-	
 void countCheckpoint(void *parameters){
 	static bool stateL = false, stateR = false;
 	
@@ -279,7 +258,7 @@ void calibration(void *parameters) {
 		
 			//xTaskCreatePinnedToCore(sendData, "SendData", 4096, NULL, 2, &xHandleSendData, 1);
 			xTaskCreatePinnedToCore(irmonitor, "IRMonitor", 4096, NULL, 2, &xHandleIRMonitor, 1);
-			xTaskCreatePinnedToCore(readMpu, "ReadMPU", 4096, NULL, 2, &xHandleReadMpu, 1);
+			xTaskCreatePinnedToCore(readMpuEncoder, "ReadMPU", 4096, NULL, 2, &xHandleReadMpuEncoder, 1);
 			//xTaskCreatePinnedToCore(countCheckpoint, "CountCheckpoints", 4096, NULL, 2, &xHandleCountCheckpoint, 1);
 			//xTaskCreatePinnedToCore(readEncoder, "ReadEncoder", 4096, NULL, 2, &xHandleReadEncoder, 1);
 			
@@ -296,34 +275,37 @@ extern "C" void app_main(void)
 {
 	printf("Running Experiment262");
 	
-	ledWhite.ConfigureGPIO();
-	ledYellow.ConfigureGPIO();	
-	motorL.ConfigureDshot();	
-	motorR.ConfigureDshot();	
-	vTaskDelay(pdMS_TO_TICKS(5000));
-	mosfet.ConfigureGPIO();
+	//ledWhite.ConfigureGPIO();
+	//ledYellow.ConfigureGPIO();	
+	//motorL.ConfigureDshot();	
+	//motorR.ConfigureDshot();	
+	//vTaskDelay(pdMS_TO_TICKS(5000));
+	//mosfet.ConfigureGPIO();
 	//adc.ConfigureAdc();
 	
 	//WIFI
 	ESP_ERROR_CHECK(nvs_flash_init());
 	wifi.ConfigureWifi();
 	wifi.ConnectWifi(WIFI_SSID, WIFI_PASS);
-	vTaskDelay(pdMS_TO_TICKS(5000));
 	
+	
+	vTaskDelay(pdMS_TO_TICKS(5000));
+	//WEBSOCK	
 	websocket.ConfigureWebsocket(WEBSOCKET_URI);
 
 	
-	/*encoderL.ConfigureEncoder();
-	encoderR.ConfigureEncoder();	
-	IRSensor.ConfigureIRReceiver();*/
-	mosfet.UpdateGPIO(true);
+	/*IRSensor.ConfigureIRReceiver();*/
+	//mosfet.UpdateGPIO(true);
 	
-	adcContinuos.ConfigureAdc(callback);
+	//adcContinuos.ConfigureAdc(callback);
 	mpu.ConfigureMPU();
-	xTaskCreatePinnedToCore(readMpu, "ReadMPU", 4096, NULL, 2, &xHandleReadMpu, 1);
+	encoderL.ConfigureAS5600();
+	vTaskDelay(pdMS_TO_TICKS(5000));
 	
+	
+	xTaskCreatePinnedToCore(readMpuEncoder, "ReadMPU", 4096, NULL, 2, &xHandleReadMpuEncoder, 1);
+	
+	//
 	//xTaskCreatePinnedToCore(calibration, "Calibration", 4096, NULL, 24, &xHandleCalibration, 0);
-	//xTaskCreatePinnedToCore(readEncoder, "ReadEncoder", 4096, NULL, 2, &xHandleReadEncoder, 1);
-
 
 }
