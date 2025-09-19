@@ -57,6 +57,7 @@
 
 // Handles for the freeRTOS tasks
 TaskHandle_t xHandleCalibration = NULL;
+TaskHandle_t xHandleCalibrationMPU = NULL;
 TaskHandle_t xHandleAdcContinuos = NULL;
 TaskHandle_t xHandleFollowLine = NULL;
 TaskHandle_t xHandleReadLine = NULL;
@@ -109,15 +110,32 @@ static int countR = 0, countL= 0;
 
 
 
-void readMpuEncoder(void *parameters){
-	printf("readMPU");
-	for(;;){
-		int gyroX, gyroY, gyroZ, accelX, accelY, accelZ = 0;
-		mpu.ReadMPU(&gyroX, &gyroY, &gyroZ, &accelX, &accelY, &accelZ);
-		int16_t angleL = encoderL.ReadRawAngle();		
-		websocket.SendData(gyroX, gyroY, gyroZ, accelX, accelY, accelZ, angleL, angleL);
-		vTaskDelay(pdMS_TO_TICKS(1));
-	}
+void readMpuEncoder(void *parameters) {
+    // Adicione a variável 'yaw'
+    float roll, pitch, yaw;
+
+    uint32_t last_update_time = esp_log_timestamp();
+    float dt;
+
+    for (;;) {
+        // Calcula o dt
+        uint32_t current_time = esp_log_timestamp();
+        dt = (current_time - last_update_time) / 1000.0f;
+        last_update_time = current_time;
+
+        // --- CORREÇÃO AQUI ---
+        // Modifique a chamada para obter os 3 ângulos
+        mpu.GetFilteredAngles(&roll, &pitch, &yaw, dt);
+
+        // Envie os 3 ângulos reais para o servidor
+        websocket.SendData(roll, pitch, yaw);
+
+        // Imprime os 3 ângulos para depuração
+        printf("Roll: %.2f, Pitch: %.2f, Yaw: %.2f\n", roll, pitch, yaw);
+
+        // Reduzi o delay para uma atualização mais fluida na animação
+        vTaskDelay(pdMS_TO_TICKS(100)); // 20x por segundo
+    }
 }
 
 
@@ -269,6 +287,25 @@ void calibration(void *parameters) {
 	}
 }
 
+const int CALIBRATION_SAMPLES_MPU = 200; 
+int countCalibrationMPU = 0;
+
+void calibracaoMPU(void *parameters) {
+	for(;;) {
+      mpu.AccumulateGyroSample();
+	  if(countCalibrationMPU > 200){
+		   mpu.ComputeAndSetOffsets(countCalibrationMPU);
+		   xTaskCreatePinnedToCore(readMpuEncoder, "ReadMPUEncoder", 4096, NULL, 2, &xHandleReadMpuEncoder, 1);
+		  
+		   vTaskSuspend(xHandleCalibrationMPU);
+		   
+		   vTaskDelete(NULL);
+		}		
+        countCalibrationMPU++;
+		vTaskDelay(pdMS_TO_TICKS(10));
+	}
+}
+
 
 
 extern "C" void app_main(void)
@@ -290,22 +327,20 @@ extern "C" void app_main(void)
 	
 	
 	vTaskDelay(pdMS_TO_TICKS(5000));
-	//WEBSOCK	
+	//WEBSOCKET	
 	websocket.ConfigureWebsocket(WEBSOCKET_URI);
 
 	
-	/*IRSensor.ConfigureIRReceiver();*/
+	//IRSensor.ConfigureIRReceiver();
 	//mosfet.UpdateGPIO(true);
 	
 	//adcContinuos.ConfigureAdc(callback);
 	mpu.ConfigureMPU();
-	encoderL.ConfigureAS5600();
-	vTaskDelay(pdMS_TO_TICKS(5000));
+	//encoderL.ConfigureAS5600();
+	vTaskDelay(pdMS_TO_TICKS(3000));
 	
-	
-	xTaskCreatePinnedToCore(readMpuEncoder, "ReadMPU", 4096, NULL, 2, &xHandleReadMpuEncoder, 1);
-	
-	//
+	xTaskCreatePinnedToCore(calibracaoMPU, "CalibracaoMPU", 8192, NULL, 2, &xHandleCalibrationMPU, 1);
+
 	//xTaskCreatePinnedToCore(calibration, "Calibration", 4096, NULL, 24, &xHandleCalibration, 0);
 
 }

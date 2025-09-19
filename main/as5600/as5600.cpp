@@ -37,10 +37,10 @@ void As5600::ConfigureAS5600() {
 }
 
 uint16_t As5600::ReadRawAngle() {
-  // O que queremos escrever: o endereço do registrador de ângulo (0x0E)
+   //o endereço do registrador de ângulo (0x0E)
     uint8_t reg_to_read = 0x0E;
 
-    // Onde vamos armazenar a leitura: um buffer de 2 bytes
+    //armazenar a leitura: um buffer de 2 bytes
     uint8_t read_buffer[2];
 
     // Executa a operação combinada: Escreve 1 byte e depois lê 2 bytes
