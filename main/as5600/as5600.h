@@ -14,7 +14,7 @@ extern "C" {
 #include "driver/i2c_master.h"
 #include "hal/i2c_types.h"
 #include "soc/gpio_num.h"
-
+#include "driver/mcpwm_cap.h"
 
 #ifdef __cplusplus
 }
@@ -33,7 +33,7 @@ private:
     gpio_num_t _gpio_pin_sda;
     gpio_num_t _gpio_pin_scl;
     i2c_port_num_t _i2c_port;
-
+	gpio_num_t _gpio_pwm;
     // --- Variáveis do Sensor ---
     const uint8_t _sensor_address = 0x36;
     const uint8_t _reg_raw_angle = 0x0E;
@@ -41,12 +41,11 @@ private:
 
 public:
 
-    As5600(gpio_num_t sda, gpio_num_t scl, i2c_port_num_t i2c_port);
+    As5600(gpio_num_t sda, gpio_num_t scl, i2c_port_num_t i2c_port, gpio_num_t gpio_pwm);
     ~As5600() {}
 
-    void ConfigureAS5600();
+    void ConfigureAS5600(bool (*callback)(mcpwm_cap_channel_handle_t cap_chan,const mcpwm_capture_event_data_t *edata, void *user_data));
 
-    uint16_t ReadRawAngle();
 };
 
 #endif 
