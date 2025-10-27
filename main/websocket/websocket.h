@@ -26,7 +26,7 @@ public:
 
 	void ConfigureWebsocket(char *uri);
 	void SendRawData(int gyroX, int gyroY, int gyroZ, int accelX, int accelY, int accelZ, int encoderR, int encoderL);
-	void SendData(float roll, float pitch, float yaw);
+	
 
 
 };

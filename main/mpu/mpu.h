@@ -42,35 +42,14 @@ private:
     uint8_t _acel_data_address[6] = {0x3B, 0x3C, 0x3D, 0x3E, 0x3F, 0x40};
     uint8_t _acel_data_read[6];
     int16_t _acel_combined_values[3];
-    long _gyro_x_cal_sum;
-    long _gyro_y_cal_sum;
-    long _gyro_z_cal_sum;
 
-    float _gyro_x_offset;
-    float _gyro_y_offset;
-    float _gyro_z_offset;
-    
-    long _accel_x_cal_sum;
-    long _accel_y_cal_sum;
-    long _accel_z_cal_sum;
-    
-    float _accel_x_offset;
-    float _accel_y_offset;
-    float _accel_z_offset;
-    
-    KalmanFilter kalmanX; // Para o ângulo de Roll
-    KalmanFilter kalmanY; // Para o ângulo de Pitch
-	float _yawAngle ;
-
+   
 	
 public:
     Mpu(gpio_num_t sda, gpio_num_t scl, i2c_port_num_t i2c_port);
 	~Mpu() {}
 	void ConfigureMPU();
-	void AccumulateGyroSample();
-	void ComputeAndSetOffsets(int total_samples);
-	void ReadMPU(int* gyroX, int* gyroY, int* gyroZ, int* accelX, int* accelY, int* accelZ,  bool fixOffset=false);
-	void GetFilteredAngles(float* roll, float* pitch, float* yaw, float dt);
+	void ReadMPU(int* gyroX, int* gyroY, int* gyroZ, int* accelX, int* accelY, int* accelZ);
 
 };
 #endif
