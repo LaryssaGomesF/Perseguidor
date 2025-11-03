@@ -14,7 +14,7 @@ extern "C" {
 #include "driver/i2c_master.h"
 #include "hal/i2c_types.h"
 #include "soc/gpio_num.h"
-#include "kalmanfilter/kalmanfilter.h"
+
 
 #ifdef __cplusplus
 }
@@ -42,14 +42,22 @@ private:
     uint8_t _acel_data_address[6] = {0x3B, 0x3C, 0x3D, 0x3E, 0x3F, 0x40};
     uint8_t _acel_data_read[6];
     int16_t _acel_combined_values[3];
-
+    
+    long _gyro_sum_values[3];
+    long _accel_sum_values[3];
+    
+    uint16_t _gyro_average_values[3];
+    uint16_t _accel_average_values[3];
+	
    
 	
 public:
     Mpu(gpio_num_t sda, gpio_num_t scl, i2c_port_num_t i2c_port);
 	~Mpu() {}
 	void ConfigureMPU();
-	void ReadMPU(int* gyroX, int* gyroY, int* gyroZ, int* accelX, int* accelY, int* accelZ);
+	void ReadMPU(int16_t* gyroX, int16_t* gyroY, int16_t* gyroZ, int16_t* accelX, int16_t* accelY, int16_t* accelZ, bool fixOffset=false);
+	void Calibration();
+	void CalculateAverage(int totalSamples);
 
 };
 #endif

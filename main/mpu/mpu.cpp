@@ -1,5 +1,6 @@
 #include "mpu.h"
 #include <math.h> 
+#include <sys/_stdint.h>
 
 
 Mpu::Mpu(gpio_num_t sda, gpio_num_t scl, i2c_port_num_t i2c_port){
@@ -47,7 +48,7 @@ void Mpu::ConfigureMPU() {
 }
 
 
-void Mpu::ReadMPU(int* gyroX, int* gyroY, int* gyroZ, int* accelX, int* accelY, int* accelZ) {
+void Mpu::ReadMPU(int16_t* gyroX, int16_t* gyroY, int16_t* gyroZ, int16_t* accelX, int16_t* accelY, int16_t* accelZ, bool fixOffset) {
  	
 	 for(uint8_t i=0; i<6; i+=2) {
 			i2c_master_transmit_receive(_dev_handle, &_gyro_data_address[i], 1, &_gyro_data_read[i], 1, 50);
@@ -59,19 +60,61 @@ void Mpu::ReadMPU(int* gyroX, int* gyroY, int* gyroZ, int* accelX, int* accelY, 
 			_gyro_combined_values[i/2] = (int16_t)((_gyro_data_read[i] << 8) | _gyro_data_read[i+1]);
 			_acel_combined_values[i/2] = (int16_t)((_acel_data_read[i] << 8) | _acel_data_read[i+1]);
 	}
+	if(fixOffset){
+		*gyroX  = _gyro_combined_values[0] - _gyro_average_values[0];
+	    *gyroY  = _gyro_combined_values[1] - _gyro_average_values[1];
+	    *gyroZ  = _gyro_combined_values[2] - _gyro_average_values[2];
 	
-    *gyroX  = _gyro_combined_values[0];
-    *gyroY  = _gyro_combined_values[1];
-    *gyroZ  = _gyro_combined_values[2];
-
-    *accelX = _acel_combined_values[0];
-    *accelY = _acel_combined_values[1];
-    *accelZ = _acel_combined_values[2];
+	    *accelX = _acel_combined_values[0] - _accel_average_values[0];
+	    *accelY = _acel_combined_values[1] - _accel_average_values[1];
+	    *accelZ = _acel_combined_values[2] - _accel_average_values[2];
+	    /*printf("\n\nGyro - X: %05d  /  Y: %05d  /  Z: %05d  \nAcel - X: %05d  /  Y: %05d  /  Z: %05d  \n",
+           _gyro_combined_values[0], _gyro_combined_values[1], _gyro_combined_values[2], _acel_combined_values[0], _acel_combined_values[1], _acel_combined_values[2]);
+	    printf("Corrigido:\n Gyro - X: %05d  /  Y: %05d  /  Z: %05d  \nAcel - X: %05d  /  Y: %05d  /  Z: %05d  \n",
+           *gyroX, *gyroY, *gyroZ, *accelX, *accelY, *accelZ);*/
+		
+	}else {
+		*gyroX  = _gyro_combined_values[0];
+	    *gyroY  = _gyro_combined_values[1];
+	    *gyroZ  = _gyro_combined_values[2];
+	
+	    *accelX = _acel_combined_values[0];
+	    *accelY = _acel_combined_values[1];
+	    *accelZ = _acel_combined_values[2];
+	}
+  
 	   
 	
 	/*printf("Gyro - X: %05d  /  Y: %05d  /  Z: %05d  \nAcel - X: %05d  /  Y: %05d  /  Z: %05d  \n",
            *gyroX, *gyroY, *gyroZ, *accelX, *accelY, *accelZ);*/
 }
 
+void Mpu::Calibration(){
+	int16_t gyroX, gyroY, gyroZ, accelX, accelY, accelZ = 0;
+	ReadMPU(&gyroX, &gyroY, &gyroZ, &accelX, &accelY, &accelZ, false);
+	
+	_gyro_sum_values[0] += gyroX;
+	_gyro_sum_values[1] += gyroY;
+	_gyro_sum_values[2] += gyroZ;
+	
+	_accel_sum_values[0] += accelX;
+	_accel_sum_values[1] += accelY;
+	_accel_sum_values[2] += accelZ;
+	
+	/*printf("Gyro - X: %05d  /  Y: %05d  /  Z: %05d  \nAcel - X: %05d  /  Y: %05d  /  Z: %05d  \n",
+           gyroX, gyroY, gyroZ, accelX, accelY, accelZ);*/
+	
+}
 
-
+void Mpu::CalculateAverage(int totalSamples){
+	_gyro_average_values[0] = _gyro_sum_values[0]/totalSamples;
+	_gyro_average_values[1] = _gyro_sum_values[1]/totalSamples;
+	_gyro_average_values[2] = _gyro_sum_values[2]/totalSamples;
+	
+	_accel_average_values[0] = _accel_sum_values[0]/totalSamples;
+	_accel_average_values[1] = _accel_sum_values[1]/totalSamples;
+	_accel_average_values[2] = _accel_sum_values[2]/totalSamples;
+	
+	/*printf("Gyro - X: %05d  /  Y: %05d  /  Z: %05d  \nAcel - X: %05d  /  Y: %05d  /  Z: %05d  \n",
+           _gyro_average_values[0], _gyro_average_values[1], _gyro_average_values[2], _accel_average_values[0], _accel_average_values[1], _accel_average_values[2] );*/
+}
