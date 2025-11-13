@@ -10,7 +10,6 @@
 #include "freertos/idf_additions.h"
 #include "freertos/projdefs.h"
 #include "freertos/task.h"
-#include "freertos/semphr.h"
 #include <vector>
 #include "dshot/dshot.h"
 #include "irreceiver/irreceiver.h"
@@ -63,7 +62,7 @@
 // 1 - Black line on a white surface
 #define TRACE_COLOR	0
 
-#define MAX_BUFFER_SIZE 11
+#define MAX_MOVEMENT_PER_TICK 90.0f 
 
 // Handles for the freeRTOS tasks
 TaskHandle_t xHandleCalibration = NULL;
@@ -77,8 +76,6 @@ TaskHandle_t xHandleReadMpu = NULL;
 TaskHandle_t xHandleSendData = NULL;
 TaskHandle_t  xHandleTaskCalculeAngleEncoderLeft = NULL;
 TaskHandle_t  xHandleTaskCalculeAngleEncoderRight = NULL;
-
-SemaphoreHandle_t mpu_readings_mutex;
 
 			 
 // Classes presenting the project components
@@ -121,14 +118,12 @@ const float kp = 1.10, kd = 0.0, max_accel = 1;
 
 uint8_t command;
 
-
+int16_t gyroX, gyroY, gyroZ, accelX, accelY, accelZ = 0;
 
 // Contagem de marcações laterais
 static int countR = 0, countL= 0;
 
-std::vector<MpuReading_t> mpu_readings_buffer; 
-size_t write_index = 0; 
-size_t current_size = 0; 
+
 const float PULSE_WIDTH_MIN_US = 32.0f; 
 
 // A faixa de largura de pulso que efetivamente contém os dados do ângulo (4095 ticks do sensor @ 920Hz)
@@ -145,9 +140,9 @@ volatile bool is_first_reading_left = true;
 volatile float last_instant_angle_left = 0.0f;
 volatile float total_accumulated_degrees_left = 0.0f;
 volatile float initial_angle_offset_left = 0.0f; 
-volatile float total_accumulated_turns_left = 0.0f;
 
-#define ANGLE_TRANSITION_THRESHOLD 300.0f
+
+#define ANGLE_TRANSITION_THRESHOLD 180.0f
 
 // PWM RIGHT
 static volatile uint32_t last_pos_edge_timestamp_right = 0;
@@ -159,7 +154,7 @@ volatile bool is_first_reading_right = true;
 volatile float last_instant_angle_right = 0.0f;
 volatile float total_accumulated_degrees_right = 0.0f;
 volatile float initial_angle_offset_right = 0.0f; 
-volatile float total_accumulated_turns_right = 0.0f;
+
 
 uint8_t CALIBRATION_SAMPLES_MPU = 200; 
 uint8_t countCalibrationMPU = 0;
@@ -172,53 +167,30 @@ bool start = false;
 
 void readMpu(void *parameters) {
     for (;;) {
-		int16_t gyroX, gyroY, gyroZ, accelX, accelY, accelZ = 0;
+
         mpu.ReadMPU(&gyroX, &gyroY, &gyroZ, &accelX, &accelY, &accelZ, true);
 
-        MpuReading_t reading;
-        reading.gyroX = gyroX;
-        reading.gyroY = gyroY;
-        reading.gyroZ = gyroZ;
-        reading.accelX = accelX;
-        reading.accelY = accelY;
-        reading.accelZ = accelZ;
-        reading.total_accumulated_turns_right = total_accumulated_turns_right;
-        reading.total_accumulated_turns_left = total_accumulated_turns_left;        
-        reading.timestamp_ms = (uint32_t)(esp_timer_get_time() / 1000ULL); 
-   
-        if (xSemaphoreTake(mpu_readings_mutex, portMAX_DELAY) == pdTRUE) {
-            
 
-			if (mpu_readings_buffer.size() >= MAX_BUFFER_SIZE) {          
-            	mpu_readings_buffer.erase(mpu_readings_buffer.begin());
-       		}
-            
-            mpu_readings_buffer.push_back(reading);
-            xSemaphoreGive(mpu_readings_mutex);
-        }
-
-
-        vTaskDelay(pdMS_TO_TICKS(1/10)); 
+        vTaskDelay(pdMS_TO_TICKS(1)); 
     }
 }
 
 void sendData(void *parameters) {
     for (;;) {
         if (start) {
-            if (mpu_readings_buffer.empty()) {
-                vTaskDelay(pdMS_TO_TICKS(2));
-                continue;
-            }
-
- 			 if (xSemaphoreTake(mpu_readings_mutex, portMAX_DELAY) == pdTRUE) {
-		        // Copia o vetor inteiro
-		        std::vector<MpuReading_t> batch_to_send = mpu_readings_buffer;          
-		        // Limpa o vetor
-		        mpu_readings_buffer.clear();
-		        xSemaphoreGive(mpu_readings_mutex);
-		
-		        websocket.SendBatchData(batch_to_send);
-		    }
+          	MpuReading_t reading;
+	        reading.gyroX = gyroX;
+	        reading.gyroY = gyroY;
+	        reading.gyroZ = gyroZ;
+	        reading.accelX = accelX;
+	        reading.accelY = accelY;
+	        reading.accelZ = accelZ;
+	        reading.total_accumulated_turns_right = total_accumulated_degrees_right;
+	        reading.total_accumulated_turns_left = total_accumulated_degrees_left;        
+	        reading.timestamp_ms = (uint32_t)(esp_timer_get_time());         
+	        
+	        websocket.SendSingleData(reading);
+			
 		        
 		}
         vTaskDelay(pdMS_TO_TICKS(10)); 
@@ -382,8 +354,7 @@ static bool pwm_capture_channel_callback_right(mcpwm_cap_channel_handle_t cap_ch
 
 void countEncoderLeft(void *parameters) {
    
-    
-    for(;;) {
+   for(;;) {
         // Espera pela notificação da ISR
         if (xTaskNotifyWait(0, 0, NULL, portMAX_DELAY) == pdTRUE) {
             if (start){	
@@ -404,8 +375,7 @@ void countEncoderLeft(void *parameters) {
 	                // O ângulo acumulado começa do zero
 	                total_accumulated_degrees_left = 0.0f;
 	                last_instant_angle_left = current_instant_angle;
-	                is_first_reading_left = false;
-	        
+	                is_first_reading_left = false; 
 	                continue; 
 	            }
 	            
@@ -422,16 +392,18 @@ void countEncoderLeft(void *parameters) {
 	                angle_difference -= 360.0f;
 	            }
 	            
+	            if (angle_difference > MAX_MOVEMENT_PER_TICK || angle_difference < -MAX_MOVEMENT_PER_TICK) {
+		             angle_difference = 0.0f; 
+           		}
+	            
+	            
 	            // Acumula a diferença de ângulo ao total
 	            total_accumulated_degrees_left += angle_difference;
 	            
 	            // Atualiza o último ângulo instantâneo
 	            last_instant_angle_left = current_instant_angle;
 	            
-	            // 3. Cálculo das Voltas Acumuladas
-	            // O valor que você enviará via WebSocket
-	            total_accumulated_turns_left = total_accumulated_degrees_left / 360.0f;
-	            
+	          
             }
         } 
 	}
@@ -477,6 +449,10 @@ void countEncoderRight(void *parameters) {
 	                angle_difference -= 360.0f;
 	            }
 	            
+	            if (angle_difference > MAX_MOVEMENT_PER_TICK || angle_difference < -MAX_MOVEMENT_PER_TICK) {
+		             angle_difference = 0.0f; 
+           		 }
+	            
 	            // *** CORREÇÃO PARA O SENSOR INVERTIDO ***
 	            // Invertemos o sinal do deslocamento antes de acumular.
 	            angle_difference = -angle_difference;
@@ -486,10 +462,6 @@ void countEncoderRight(void *parameters) {
 	            
 	            // Atualiza o último ângulo instantâneo
 	            last_instant_angle_right = current_instant_angle;
-	            
-	            // 3. Cálculo das Voltas Acumuladas
-	            // O valor que você enviará via WebSocket
-	            total_accumulated_turns_right = total_accumulated_degrees_right / 360.0f;
 	            
 	          
             }
@@ -508,8 +480,8 @@ void settingEncoders(){
     ESP_ERROR_CHECK(mcpwm_capture_timer_start(cap_timer));
 
 	
-	xTaskCreatePinnedToCore(countEncoderLeft, "Encoder Counter Task", 2048, NULL, 1, &xHandleTaskCalculeAngleEncoderLeft, 1);
-	xTaskCreatePinnedToCore(countEncoderRight, "Encoder Counter Task", 2048, NULL,1, &xHandleTaskCalculeAngleEncoderRight, 1);
+	xTaskCreatePinnedToCore(countEncoderLeft, "Encoder Counter Task Left", 2048, NULL, 1, &xHandleTaskCalculeAngleEncoderLeft, 1);
+	xTaskCreatePinnedToCore(countEncoderRight, "Encoder Counter Task Right", 2048, NULL,1, &xHandleTaskCalculeAngleEncoderRight, 1);
 	
  	encoderR.ConfigureAS5600(cap_timer, pwm_capture_channel_callback_right);
     encoderL.ConfigureAS5600(cap_timer, pwm_capture_channel_callback_left);
@@ -531,20 +503,18 @@ void calibration(void *parameters) {
 		
 		if(countCalibration > CALIBRATION_SAMPLES){
 			
-			printf("stop calibracao sensor line\n\n\n");
 			motorR.UpdateThrottle(0);
 			motorL.UpdateThrottle(0);
 			ledWhite.UpdateGPIO(false);		
-			//adcContinuos.GetMinAndMaxValues();
 			//adc.GetMinAndMaxValues();
 			settingEncoders();
 		
 			xTaskCreatePinnedToCore(followLine, "FollowLine", 4096, NULL, 1, &xHandleFollowLine, 0);
 			xTaskCreatePinnedToCore(readLine, "ReadLine", 2048, NULL, 1, &xHandleReadLine, 0);
-
+			xTaskCreatePinnedToCore(irmonitor, "IRMonitor", 4096, NULL, 2, &xHandleIRMonitor, 0);
 			//xTaskCreatePinnedToCore(countCheckpoint, "CountCheckpoints", 4096, NULL, 2, &xHandleCountCheckpoint, 1);
-			xTaskCreatePinnedToCore(irmonitor, "IRMonitor", 4096, NULL, 1, &xHandleIRMonitor, 1);
-			xTaskCreatePinnedToCore(readMpu, "ReadMPU", 4096, NULL, 2, &xHandleReadMpu, 1);
+
+			xTaskCreatePinnedToCore(readMpu, "ReadMPU", 4096, NULL, 1, &xHandleReadMpu, 1);
 			xTaskCreatePinnedToCore(sendData, "sendData", 4096, NULL, 1, &xHandleSendData, 1);
 
 			vTaskSuspend(xHandleCalibration);
@@ -558,15 +528,14 @@ void calibration(void *parameters) {
 void calibrationMPU(void *parameters) {
 	for(;;) {		
 		
-		ledWhite.UpdateGPIO(true);
+		ledYellow.UpdateGPIO(true);
 	   	mpu.Calibration();
 		countCalibrationMPU++;
 		
 		if(countCalibrationMPU >= CALIBRATION_SAMPLES_MPU){
 			
-			printf("stop calibracao mpu\n\n\n");
 			mpu.CalculateAverage(CALIBRATION_SAMPLES_MPU);
-			ledWhite.UpdateGPIO(false);		
+			ledYellow.UpdateGPIO(false);		
 			xTaskCreatePinnedToCore(calibration, "Calibration Line Sensor", 4096, NULL, 24, &xHandleCalibration, 0);
 
 			vTaskSuspend(xHandleCalibrationMpu);
@@ -577,13 +546,6 @@ void calibrationMPU(void *parameters) {
 	}
 }
 
-void initialize_mpu_data_sync() {
-	mpu_readings_buffer.reserve(MAX_BUFFER_SIZE); 
-    mpu_readings_mutex = xSemaphoreCreateMutex();
-    if (mpu_readings_mutex == NULL) {
-       
-    }
-}
 
 extern "C" void app_main(void)
 {
@@ -619,7 +581,6 @@ extern "C" void app_main(void)
     // IR RECEIVER
 	IRSensor.ConfigureIRReceiver();
 	
-	initialize_mpu_data_sync();
 	// MPU E ENCODERS
 	mpu.ConfigureMPU();
 	vTaskDelay(pdMS_TO_TICKS(3000));

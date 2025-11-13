@@ -44,7 +44,7 @@ public:
 	void ConfigureWebsocket(char *uri);
 	void SendRawData(int gyroX, int gyroY, int gyroZ, int accelX, int accelY, int accelZ, float encoderR, float encoderL);
 	void SendBatchData(const std::vector<MpuReading_t>& batch);
-
+	void SendSingleData(const MpuReading_t& reading);
 
 };
 #endif

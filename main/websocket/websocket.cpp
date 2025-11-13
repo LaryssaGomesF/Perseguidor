@@ -94,3 +94,22 @@ void Websocket::SendBatchData(const std::vector<MpuReading_t>& batch) {
         esp_websocket_client_send_text(client, json_message, message_len, portMAX_DELAY);
     }
 }
+
+void Websocket::SendSingleData(const MpuReading_t& reading) {
+    
+    char json_message[MAX_JSON_MESSAGE_SIZE];
+    
+    // Serialização direta do array interno: [TS, gX, gY, gZ, aX, aY, aZ, eR, eL]
+    int written_chars = snprintf(json_message, sizeof(json_message), 
+                             "[%lld, %d, %d, %d, %d, %d, %d, %.2f, %.2f]",
+                             reading.timestamp_ms,
+                             reading.gyroX, reading.gyroY, reading.gyroZ,
+                             reading.accelX, reading.accelY, reading.accelZ,
+                             reading.total_accumulated_turns_right,
+                             reading.total_accumulated_turns_left);
+
+    // Envio da mensagem via WebSocket
+    if (written_chars > 0 && written_chars < MAX_JSON_MESSAGE_SIZE && esp_websocket_client_is_connected(client)) {
+        esp_websocket_client_send_text(client, json_message, written_chars, portMAX_DELAY);
+    }
+}
