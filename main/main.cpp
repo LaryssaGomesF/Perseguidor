@@ -139,7 +139,7 @@ static volatile uint32_t last_high_ticks_left = 0;
 volatile bool is_first_reading_left = true; 
 volatile float last_instant_angle_left = 0.0f;
 volatile float total_accumulated_degrees_left = 0.0f;
-volatile float initial_angle_offset_left = 0.0f; 
+
 
 
 #define ANGLE_TRANSITION_THRESHOLD 180.0f
@@ -153,7 +153,6 @@ static volatile uint32_t last_high_ticks_right = 0;
 volatile bool is_first_reading_right = true; 
 volatile float last_instant_angle_right = 0.0f;
 volatile float total_accumulated_degrees_right = 0.0f;
-volatile float initial_angle_offset_right = 0.0f; 
 
 
 uint8_t CALIBRATION_SAMPLES_MPU = 200; 
@@ -367,11 +366,10 @@ void countEncoderLeft(void *parameters) {
 	            if (data_pulse_width_us > PULSE_WIDTH_DATA_RANGE_US) data_pulse_width_us = PULSE_WIDTH_DATA_RANGE_US;
 	
 	            float current_instant_angle = (data_pulse_width_us / PULSE_WIDTH_DATA_RANGE_US) * 360.0f;
+	            
 	
 	            // --- TRATAMENTO DO PONTO INICIAL ---
-	            if (is_first_reading_left) {
-	                // Guarda o primeiro ângulo lido como offset
-	                initial_angle_offset_left = current_instant_angle;
+	            if (is_first_reading_left) {	          
 	                // O ângulo acumulado começa do zero
 	                total_accumulated_degrees_left = 0.0f;
 	                last_instant_angle_left = current_instant_angle;
@@ -381,28 +379,26 @@ void countEncoderLeft(void *parameters) {
 	            
 	            // 2. Cálculo do Deslocamento e Acumulação
 	            float angle_difference = current_instant_angle - last_instant_angle_left;
+	            
 	
 	            // Lógica para detectar a transição de 360°/0° (wrap-around)
-	            if (angle_difference < -ANGLE_TRANSITION_THRESHOLD) {
-	                // Rotação para frente (Ex: de 350° para 10° -> -340°. Corrigir para +20)
+	            if (angle_difference < -ANGLE_TRANSITION_THRESHOLD) {	              
 	                angle_difference += 360.0f;
 	            } 
 	            else if (angle_difference > ANGLE_TRANSITION_THRESHOLD) {
-	                // Rotação para trás (Ex: de 10° para 350° -> +340°. Corrigir para -20)
 	                angle_difference -= 360.0f;
 	            }
 	            
+	 
 	            if (angle_difference > MAX_MOVEMENT_PER_TICK || angle_difference < -MAX_MOVEMENT_PER_TICK) {
-		             angle_difference = 0.0f; 
+		            continue;
            		}
-	            
-	            
-	            // Acumula a diferença de ângulo ao total
-	            total_accumulated_degrees_left += angle_difference;
-	            
-	            // Atualiza o último ângulo instantâneo
+           		 
+	      		// Atualiza o último ângulo instantâneo
 	            last_instant_angle_left = current_instant_angle;
-	            
+	            // Acumula a diferença de ângulo ao total
+	            total_accumulated_degrees_left += angle_difference;           
+
 	          
             }
         } 
@@ -424,11 +420,14 @@ void countEncoderRight(void *parameters) {
 	            if (data_pulse_width_us > PULSE_WIDTH_DATA_RANGE_US) data_pulse_width_us = PULSE_WIDTH_DATA_RANGE_US;
 	
 	            float current_instant_angle = (data_pulse_width_us / PULSE_WIDTH_DATA_RANGE_US) * 360.0f;
+	            
+	            if (current_instant_angle < 0.0f || current_instant_angle > 360.0f) {
+				  	// leitura impossível -> descarta
+				 continue;
+				}
 	
 	            // --- TRATAMENTO DO PONTO INICIAL ---
 	            if (is_first_reading_right) {
-	                // Guarda o primeiro ângulo lido como offset
-	                initial_angle_offset_right = current_instant_angle;
 	                // O ângulo acumulado começa do zero
 	                total_accumulated_degrees_right = 0.0f;
 	                last_instant_angle_right = current_instant_angle;
@@ -450,8 +449,8 @@ void countEncoderRight(void *parameters) {
 	            }
 	            
 	            if (angle_difference > MAX_MOVEMENT_PER_TICK || angle_difference < -MAX_MOVEMENT_PER_TICK) {
-		             angle_difference = 0.0f; 
-           		 }
+		             continue;
+           		}
 	            
 	            // *** CORREÇÃO PARA O SENSOR INVERTIDO ***
 	            // Invertemos o sinal do deslocamento antes de acumular.
@@ -480,8 +479,8 @@ void settingEncoders(){
     ESP_ERROR_CHECK(mcpwm_capture_timer_start(cap_timer));
 
 	
-	xTaskCreatePinnedToCore(countEncoderLeft, "Encoder Counter Task Left", 2048, NULL, 1, &xHandleTaskCalculeAngleEncoderLeft, 1);
-	xTaskCreatePinnedToCore(countEncoderRight, "Encoder Counter Task Right", 2048, NULL,1, &xHandleTaskCalculeAngleEncoderRight, 1);
+	xTaskCreatePinnedToCore(countEncoderLeft, "Encoder Counter Task Left", 2048, NULL, 2, &xHandleTaskCalculeAngleEncoderLeft, 1);
+	xTaskCreatePinnedToCore(countEncoderRight, "Encoder Counter Task Right", 2048, NULL,2, &xHandleTaskCalculeAngleEncoderRight, 1);
 	
  	encoderR.ConfigureAS5600(cap_timer, pwm_capture_channel_callback_right);
     encoderL.ConfigureAS5600(cap_timer, pwm_capture_channel_callback_left);
@@ -514,7 +513,7 @@ void calibration(void *parameters) {
 			xTaskCreatePinnedToCore(irmonitor, "IRMonitor", 4096, NULL, 2, &xHandleIRMonitor, 0);
 			//xTaskCreatePinnedToCore(countCheckpoint, "CountCheckpoints", 4096, NULL, 2, &xHandleCountCheckpoint, 1);
 
-			xTaskCreatePinnedToCore(readMpu, "ReadMPU", 4096, NULL, 1, &xHandleReadMpu, 1);
+			xTaskCreatePinnedToCore(readMpu, "ReadMPU", 4096, NULL, 2, &xHandleReadMpu, 1);
 			xTaskCreatePinnedToCore(sendData, "sendData", 4096, NULL, 1, &xHandleSendData, 1);
 
 			vTaskSuspend(xHandleCalibration);
