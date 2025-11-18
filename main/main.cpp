@@ -114,7 +114,7 @@ float adcSensors[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 float adcSideSensors[3] = {0.0, 0.0, 0.0};
 
 
-const float kp = 1.10, kd = 0.0, max_accel = 1;
+const float kp = 1.35, kd = 0.33, max_accel = 1;
 
 uint8_t command;
 
@@ -479,8 +479,8 @@ void settingEncoders(){
     ESP_ERROR_CHECK(mcpwm_capture_timer_start(cap_timer));
 
 	
-	xTaskCreatePinnedToCore(countEncoderLeft, "Encoder Counter Task Left", 2048, NULL, 2, &xHandleTaskCalculeAngleEncoderLeft, 1);
-	xTaskCreatePinnedToCore(countEncoderRight, "Encoder Counter Task Right", 2048, NULL,2, &xHandleTaskCalculeAngleEncoderRight, 1);
+	xTaskCreatePinnedToCore(countEncoderLeft, "Encoder Counter Task Left", 2048, NULL, 1, &xHandleTaskCalculeAngleEncoderLeft, 1);
+	xTaskCreatePinnedToCore(countEncoderRight, "Encoder Counter Task Right", 2048, NULL,1, &xHandleTaskCalculeAngleEncoderRight, 1);
 	
  	encoderR.ConfigureAS5600(cap_timer, pwm_capture_channel_callback_right);
     encoderL.ConfigureAS5600(cap_timer, pwm_capture_channel_callback_left);
@@ -513,7 +513,7 @@ void calibration(void *parameters) {
 			xTaskCreatePinnedToCore(irmonitor, "IRMonitor", 4096, NULL, 2, &xHandleIRMonitor, 0);
 			//xTaskCreatePinnedToCore(countCheckpoint, "CountCheckpoints", 4096, NULL, 2, &xHandleCountCheckpoint, 1);
 
-			xTaskCreatePinnedToCore(readMpu, "ReadMPU", 4096, NULL, 2, &xHandleReadMpu, 1);
+			xTaskCreatePinnedToCore(readMpu, "ReadMPU", 4096, NULL, 1, &xHandleReadMpu, 1);
 			xTaskCreatePinnedToCore(sendData, "sendData", 4096, NULL, 1, &xHandleSendData, 1);
 
 			vTaskSuspend(xHandleCalibration);
