@@ -33,7 +33,7 @@
 #define DSHOT_MOTOR_R 15
 #define DSHOT_MOTOR_L 13
 #define MOTOR_MAX_SPEED 90
-#define MOTOR_BASE_SPEED 40
+#define MOTOR_BASE_SPEED 50
 
 //LED
 #define GPIO_MOSFET 23
@@ -114,7 +114,7 @@ float adcSensors[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 float adcSideSensors[3] = {0.0, 0.0, 0.0};
 
 
-const float kp = 1.35, kd = 0.33, max_accel = 1;
+const float kp = 1.4, kd = 6.9, max_accel = 1;
 
 uint8_t command;
 
@@ -260,7 +260,7 @@ void followLine(void *parameters) {
 	   		motorR.UpdateThrottle(0);
 			
 		} else {
-			error = (adcSensors[1] - adcSensors[0]) + 1.4*(adcSensors[3] - adcSensors[2]) + 1.8*(adcSensors[5] - adcSensors[4]);
+			error = (adcSensors[1] - adcSensors[0]) + 1.4*(adcSensors[3] - adcSensors[2]) + 1.7*(adcSensors[5] - adcSensors[4]);
 	    	float controllerResult = kp*error + kd*(error - lastError);
 			motorR.UpdateThrottle(MOTOR_BASE_SPEED + controllerResult );
 	   		motorL.UpdateThrottle(MOTOR_BASE_SPEED - controllerResult );
