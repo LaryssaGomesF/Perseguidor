@@ -2,7 +2,7 @@
 # for more information about component CMakeLists.txt files.
 
 idf_component_register(
-    SRCS "main.cpp" "dshot/dshot_esc_encoder.c" "dshot/dshot.cpp" "gpio/gpio_config.cpp" "adc/adc.cpp" "encoder/encoder.cpp" "irreceiver/irreceiver.cpp" "adccontinuos/adccontinuos.cpp" "mpu/mpu.cpp" "wifi/wifi.cpp" "websocket/websocket.cpp" "as5600/as5600.cpp"       # list the source files of this component
+    SRCS "main.cpp" "dshot/dshot_esc_encoder.c" "dshot/dshot.cpp" "gpio/gpio_config.cpp" "adc/adc.cpp" "encoder/encoder.cpp" "irreceiver/irreceiver.cpp" "adccontinuos/adccontinuos.cpp" "mpu/mpu.cpp" "wifi/wifi.cpp"  "as5600/as5600.cpp" "mqtt/mqtt_config.cpp"      # list the source files of this component
     INCLUDE_DIRS "."
 )
 

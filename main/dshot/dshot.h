@@ -6,11 +6,9 @@
 extern "C" {
 #endif
 
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
+
 #include "driver/rmt_tx.h"
 #include "dshot_esc_encoder.h"
-#include <sys/_stdint.h>
 
 #ifdef __cplusplus
 }

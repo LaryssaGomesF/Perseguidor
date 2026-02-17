@@ -5,12 +5,10 @@
 extern "C" {
 #endif
 
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
+
 #include "driver/gpio.h"
 #include "hal/gpio_types.h"
 #include "soc/gpio_num.h"
-#include <sys/_stdint.h>
 #include "driver/i2c_master.h"
 #include "hal/i2c_types.h"
 #include "soc/gpio_num.h"

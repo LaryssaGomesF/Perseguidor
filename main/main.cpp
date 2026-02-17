@@ -1,16 +1,10 @@
-#include <iostream>
-#include <numbers>
 #include <stdio.h>
 #include <stdbool.h>
-#include <sys/_intsup.h>
 #include <sys/_stdint.h>
-#include <unistd.h>
+#include <sys/types.h>
 #include "arch/sys_arch.h"
 #include "freertos/FreeRTOS.h"
-#include "freertos/idf_additions.h"
-#include "freertos/projdefs.h"
 #include "freertos/task.h"
-#include <vector>
 #include "dshot/dshot.h"
 #include "irreceiver/irreceiver.h"
 #include "soc/adc_channel.h"
@@ -24,10 +18,11 @@
 #include "encoder/encoder.h"
 #include "mpu/mpu.h"
 #include "wifi/wifi.h"
-#include "websocket/websocket.h"
 #include "as5600/as5600.h"
 #include "driver/mcpwm_cap.h"
 #include "esp_timer.h" 
+#include "mqtt/mqtt_config.h"
+
 
 //MOTORES
 #define DSHOT_MOTOR_R 15
@@ -74,6 +69,7 @@ TaskHandle_t xHandleCountCheckpoint = NULL;
 TaskHandle_t xHandleIRMonitor = NULL;
 TaskHandle_t xHandleReadMpu = NULL;
 TaskHandle_t xHandleSendData = NULL;
+TaskHandle_t xHandleCaptureData = NULL;
 TaskHandle_t  xHandleTaskCalculeAngleEncoderLeft = NULL;
 TaskHandle_t  xHandleTaskCalculeAngleEncoderRight = NULL;
 
@@ -98,6 +94,7 @@ As5600 encoderL(static_cast<gpio_num_t>(AS5600_LEFT_PWM_INPUT_GPIO));
 
 Mpu mpu(static_cast<gpio_num_t>(GPIO_MPU_SDA),static_cast<gpio_num_t>(GPIO_MPU_SCL) , static_cast<i2c_port_num_t>(I2C_PORT));
 
+Mqtt_Config mqtt_config;
 
 // for NEC protocol
 const int start_key = 69, stop_key = 70;
@@ -107,7 +104,7 @@ bool protocol = 0;
 IRReceiver IRSensor(static_cast<gpio_num_t>(IR_RECEIVER_PIN), protocol);
 
 Wifi wifi;
-Websocket websocket;
+
 
 
 float adcSensors[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
@@ -161,6 +158,7 @@ uint8_t countCalibrationMPU = 0;
 uint16_t CALIBRATION_SAMPLES = 20000; 
 uint16_t countCalibration = 0;
 
+uint16_t i =0;
 
 bool start = false;
 
@@ -168,31 +166,81 @@ void readMpu(void *parameters) {
     for (;;) {
 
         mpu.ReadMPU(&gyroX, &gyroY, &gyroZ, &accelX, &accelY, &accelZ, true);
-
-
         vTaskDelay(pdMS_TO_TICKS(1)); 
     }
 }
 
-void sendData(void *parameters) {
+// 1. Definição da estrutura de dados
+struct SensorPacket {
+    uint32_t ts;
+    int16_t gyroX, gyroY, gyroZ;
+    int16_t accX, accY, accZ;
+    float angleR, angleL;
+};
+
+// 2. Handle da Fila
+QueueHandle_t telemetryQueue;
+
+
+void captureDataTask(void *parameters) {
+    SensorPacket packet;
+    uint32_t last_ts = 0;
+
     for (;;) {
         if (start) {
-          	MpuReading_t reading;
-	        reading.gyroX = gyroX;
-	        reading.gyroY = gyroY;
-	        reading.gyroZ = gyroZ;
-	        reading.accelX = accelX;
-	        reading.accelY = accelY;
-	        reading.accelZ = accelZ;
-	        reading.total_accumulated_turns_right = total_accumulated_degrees_right;
-	        reading.total_accumulated_turns_left = total_accumulated_degrees_left;        
-	        reading.timestamp_ms = (uint32_t)(esp_timer_get_time());         
-	        
-	        websocket.SendSingleData(reading);
+            uint32_t current_ts = (uint32_t)(esp_timer_get_time() / 1000);
+            
+            // PROTEÇÃO: Só envia se o tempo mudou
+            if (current_ts > last_ts) {
+                packet.ts = (uint32_t)(esp_timer_get_time() / 1000);
+       
+	            packet.gyroX = gyroX; packet.gyroY = gyroY; packet.gyroZ = gyroZ;
+	            packet.accX = accelX; packet.accY = accelY; packet.accZ = accelZ;
+	            packet.angleR = total_accumulated_degrees_right;
+	            packet.angleL = total_accumulated_degrees_left;
+
+                
+                xQueueSend(telemetryQueue, &packet, 0);
+                last_ts = current_ts;
+            }
+        }
+        
+        vTaskDelay(pdMS_TO_TICKS(15));
+    }
+}
+
+void sendData(void *parameters) {
+    SensorPacket buffer[10];
+    int count = 0;
+    char mqttPayload[1024]; 
+
+    for (;;) {
+        SensorPacket received;
+        // Espera o dado chegar na fila
+        if (xQueueReceive(telemetryQueue, &received, portMAX_DELAY)) {
+            buffer[count] = received;
+            count++;
+
+            // Quando atingir 10 amostras, formata e envia
+            // No loop dentro da sendDataTask (ESP32)
+			if (count >= 10) {
+			    int offset = 0;
+			    mqttPayload[0] = '\0';
 			
-		        
-		}
-        vTaskDelay(pdMS_TO_TICKS(10)); 
+			    for (int j = 0; j < 10; j++) {
+			        // Agora formatamos como o seu script original esperava: [dados]\n
+			        offset += snprintf(mqttPayload + offset, sizeof(mqttPayload) - offset,
+			                          "[%" PRIu32 ",%d,%d,%d,%d,%d,%d,%.2f,%.2f]",
+			                           buffer[j].ts, 
+			                           (int)buffer[j].gyroX, (int)buffer[j].gyroY, (int)buffer[j].gyroZ,
+			                           (int)buffer[j].accX, (int)buffer[j].accY, (int)buffer[j].accZ,
+			                           buffer[j].angleR, buffer[j].angleL);
+			    }
+			    
+			    mqtt_config.publishRaw(mqttPayload); // Envia o bloco de 10 linhas
+			    count = 0;
+			}
+        }  
     }
 }
 
@@ -252,25 +300,25 @@ void followLine(void *parameters) {
 	for(;;) {  
 	
 		if (start) {
-		lastError = error;
-		sensorSum = adcSensors[0] + adcSensors[1] + adcSensors[2] + adcSensors[3]+ adcSensors[4] + adcSensors[5];		
-	 	
-		if(sensorSum < 5) {
-			motorL.UpdateThrottle(0);
-	   		motorR.UpdateThrottle(0);
+			lastError = error;
+			sensorSum = adcSensors[0] + adcSensors[1] + adcSensors[2] + adcSensors[3]+ adcSensors[4] + adcSensors[5];		
+		 	
+			if(sensorSum < 5) {
+				motorL.UpdateThrottle(0);
+		   		motorR.UpdateThrottle(0);
+				
+			} else {
+				error = (adcSensors[1] - adcSensors[0]) + 1.4*(adcSensors[3] - adcSensors[2]) + 1.7*(adcSensors[5] - adcSensors[4]);
+		    	float controllerResult = kp*error + kd*(error - lastError);
+				motorR.UpdateThrottle(MOTOR_BASE_SPEED + controllerResult );
+		   		motorL.UpdateThrottle(MOTOR_BASE_SPEED - controllerResult );
+			}		
 			
-		} else {
-			error = (adcSensors[1] - adcSensors[0]) + 1.4*(adcSensors[3] - adcSensors[2]) + 1.7*(adcSensors[5] - adcSensors[4]);
-	    	float controllerResult = kp*error + kd*(error - lastError);
-			motorR.UpdateThrottle(MOTOR_BASE_SPEED + controllerResult );
-	   		motorL.UpdateThrottle(MOTOR_BASE_SPEED - controllerResult );
-		}		
-		
-	  } else {
-		motorR.UpdateThrottle(0);	
-	    motorL.UpdateThrottle(0);
-	  }
-	  vTaskDelay(pdMS_TO_TICKS(10));
+		  } else {
+			motorR.UpdateThrottle(0);	
+		    motorL.UpdateThrottle(0);
+		  }
+		  vTaskDelay(pdMS_TO_TICKS(10));
 	}
 }
 
@@ -394,10 +442,12 @@ void countEncoderLeft(void *parameters) {
 		            continue;
            		}
            		 
+           		
 	      		// Atualiza o último ângulo instantâneo
 	            last_instant_angle_left = current_instant_angle;
+	            
 	            // Acumula a diferença de ângulo ao total
-	            total_accumulated_degrees_left += angle_difference;           
+	           	total_accumulated_degrees_left += angle_difference;    
 
 	          
             }
@@ -458,6 +508,7 @@ void countEncoderRight(void *parameters) {
 	            
 	            // Acumula a diferença de ângulo ao total
 	            total_accumulated_degrees_right += angle_difference;
+
 	            
 	            // Atualiza o último ângulo instantâneo
 	            last_instant_angle_right = current_instant_angle;
@@ -510,12 +561,12 @@ void calibration(void *parameters) {
 		
 			xTaskCreatePinnedToCore(followLine, "FollowLine", 4096, NULL, 1, &xHandleFollowLine, 0);
 			xTaskCreatePinnedToCore(readLine, "ReadLine", 2048, NULL, 1, &xHandleReadLine, 0);
-			xTaskCreatePinnedToCore(irmonitor, "IRMonitor", 4096, NULL, 2, &xHandleIRMonitor, 0);
+			xTaskCreatePinnedToCore(irmonitor, "IRMonitor", 	4096, NULL, 1, &xHandleIRMonitor, 0);
 			//xTaskCreatePinnedToCore(countCheckpoint, "CountCheckpoints", 4096, NULL, 2, &xHandleCountCheckpoint, 1);
 
 			xTaskCreatePinnedToCore(readMpu, "ReadMPU", 4096, NULL, 1, &xHandleReadMpu, 1);
-			xTaskCreatePinnedToCore(sendData, "sendData", 4096, NULL, 1, &xHandleSendData, 1);
-
+			xTaskCreatePinnedToCore(sendData, "sendData", 4096, NULL, 3, &xHandleSendData, 1);
+			xTaskCreatePinnedToCore(captureDataTask, "captureData", 4096, NULL, 3, &xHandleCaptureData, 1);
 			vTaskSuspend(xHandleCalibration);
 			vTaskDelete(xHandleCalibration);
 		}
@@ -535,7 +586,7 @@ void calibrationMPU(void *parameters) {
 			
 			mpu.CalculateAverage(CALIBRATION_SAMPLES_MPU);
 			ledYellow.UpdateGPIO(false);		
-			xTaskCreatePinnedToCore(calibration, "Calibration Line Sensor", 4096, NULL, 24, &xHandleCalibration, 0);
+			xTaskCreatePinnedToCore(calibration, "Calibration Line Sensor", 4096, NULL, 1, &xHandleCalibration, 0);
 
 			vTaskSuspend(xHandleCalibrationMpu);
 			vTaskDelete(xHandleCalibrationMpu);
@@ -569,8 +620,8 @@ extern "C" void app_main(void)
 	
 	
 	//WEBSOCKET	
-	websocket.ConfigureWebsocket(WEBSOCKET_URI);
-	
+	//websocket.ConfigureWebsocket(WEBSOCKET_URI);
+	mqtt_config.ConfigureMqtt();
 	
 	//ADC
 	//adc.ConfigureAdc();
@@ -583,6 +634,13 @@ extern "C" void app_main(void)
 	// MPU E ENCODERS
 	mpu.ConfigureMPU();
 	vTaskDelay(pdMS_TO_TICKS(3000));
+	
+	telemetryQueue = xQueueCreate(100, sizeof(SensorPacket));
+    
+    if (telemetryQueue == NULL) {
+        printf("Falha ao criar a fila!\n");
+        return;
+    }
 	xTaskCreatePinnedToCore(calibrationMPU, "Calibration MPU", 2048, NULL, 24, &xHandleCalibrationMpu, 0);
 	vTaskDelay(pdMS_TO_TICKS(3000));
 
